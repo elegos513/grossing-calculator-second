@@ -1,7 +1,7 @@
 // Project Assignments Scheduling Tool - JS+Python API version
 let tasks = [];
 let priorityScheduleChart;
-const API_BASE = 'http://localhost:5000/api';
+const API_BASE = 'https://grossing-calculator-second.onrender.com/api';
 
 const TASK_STRUCTURE = {
     Priority: [

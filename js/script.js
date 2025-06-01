@@ -6,7 +6,7 @@ let priorityScheduleChart;
 const API_BASE =
     window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
         ? "http://localhost:5000/api"
-        : "https://grossing-calculator-second.onrender.com/api";
+        : "https://grossing-calculator-second.onrender.com";
 
 const TASK_STRUCTURE = {
     Priority: [

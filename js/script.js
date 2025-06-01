@@ -2,11 +2,8 @@
 let tasks = [];
 let priorityScheduleChart;
 
-// Use local API if running on localhost, otherwise use production
-const API_BASE =
-    window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
-        ? "http://localhost:5000/api"
-        : "https://grossing-calculator-second.onrender.com";
+// Use only the hosted API URL
+const API_BASE = 'https://grossing-calculator-second.onrender.com/api';
 
 const TASK_STRUCTURE = {
     Priority: [

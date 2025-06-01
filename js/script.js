@@ -1,7 +1,12 @@
 // Project Assignments Scheduling Tool - JS+Python API version
 let tasks = [];
 let priorityScheduleChart;
-const API_BASE = 'http://localhost:5000/api';
+
+// Use local API if running on localhost, otherwise use production
+const API_BASE =
+    window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+        ? "http://localhost:5000/api"
+        : "https://grossing-calculator-second.onrender.com/api";
 
 const TASK_STRUCTURE = {
     Priority: [
@@ -233,6 +238,14 @@ function initializePriorityChart() {
                             const index = context.dataIndex;
                             const hours = dataset.data[index];
                             let label = `${dataset.label}: ${hours?.toFixed ? hours.toFixed(2) : 0} hours`;
+                            if (dataset.label !== 'Autopsy Reserved' && window.priorityScheduleChart && window.priorityScheduleChart.data && window.priorityScheduleChart.data.labels) {
+                                const empIdx = index;
+                                if (window.lastEmployees && window.lastEmployees[empIdx]) {
+                                    const emp = window.lastEmployees[empIdx];
+                                    const count = emp.case_counts && emp.case_counts[dataset.label] ? emp.case_counts[dataset.label] : 0;
+                                    label += `, ${count} assigned`;
+                                }
+                            }
                             return label;
                         }
                     }
@@ -256,9 +269,10 @@ function updatePriorityChart() {
     .then(res => res.json())
     .then(data => {
         const employees = data.employees || [];
+        window.lastEmployees = employees;
         if (employees.length === 0) {
             window.priorityScheduleChart.data.labels = ["PA 1"];
-            window.priorityScheduleChart.data.datasets = TASK_STRUCTURE.Priority.map(sub => ({
+            window.priorityScheduleChart.data.datasets = [...TASK_STRUCTURE.Priority, ...TASK_STRUCTURE.Routine].map(sub => ({
                 label: sub.label,
                 data: [0],
                 backgroundColor: '#888',
@@ -266,9 +280,11 @@ function updatePriorityChart() {
                 borderWidth: 1
             }));
             window.priorityScheduleChart.update();
+            updateDailySummary();
             return;
         }
-        const colors = {
+        // Priority color scheme
+        const priorityColors = {
             'Priority Small': '#3498db',
             'Priority Breast': '#e67e22',
             'Priority Sarcoma': '#9b59b6',
@@ -279,17 +295,94 @@ function updatePriorityChart() {
             'NICU Placentas': '#2ecc71',
             'Priority Small - Mid-day': '#d35400'
         };
-        const datasets = TASK_STRUCTURE.Priority.map(sub => ({
-            label: sub.label,
-            data: employees.map(emp => emp.tasks.filter(t => t.name === sub.label).reduce((sum, t) => sum + t.hours, 0)),
-            backgroundColor: colors[sub.label] || '#888',
-            stack: 'Stack 0',
-            borderWidth: 1
-        }));
-        window.priorityScheduleChart.data.labels = employees.length > 0 ? employees.map(emp => `PA ${emp.id}`) : ["PA 1"];
+        // Routine: use a pattern/texture
+        // We'll use Chart.js pattern plugin if available, or fallback to semi-transparent colors
+        // For now, use diagonal stripes via CanvasPattern if available, else fallback
+        function makePattern(color) {
+            const size = 8;
+            const patternCanvas = document.createElement('canvas');
+            patternCanvas.width = size;
+            patternCanvas.height = size;
+            const pctx = patternCanvas.getContext('2d');
+            pctx.fillStyle = color;
+            pctx.fillRect(0, 0, size, size);
+            pctx.strokeStyle = 'rgba(0,0,0,0.15)';
+            pctx.lineWidth = 2;
+            pctx.beginPath();
+            pctx.moveTo(0, size);
+            pctx.lineTo(size, 0);
+            pctx.stroke();
+            return pctx.createPattern(patternCanvas, 'repeat');
+        }
+        const routineColors = {
+            'Routine Small': '#3498db',
+            'Routine Breast': '#e67e22',
+            'Routine GI': '#1abc9c',
+            'Routine Gyne': '#e74c3c',
+            'Routine Head + Neck': '#34495e',
+            'Routine Miscellaneous': '#f1c40f',
+            'Routine Placenta': '#2ecc71',
+            'Non Tumour Bones': '#d35400'
+        };
+        // Build datasets: Priority (solid color), Routine (pattern)
+        const datasets = [
+            ...TASK_STRUCTURE.Priority.map(sub => ({
+                label: sub.label,
+                data: employees.map(emp => emp.tasks.filter(t => t.name === sub.label).reduce((sum, t) => sum + t.hours, 0)),
+                backgroundColor: priorityColors[sub.label] || '#888',
+                stack: 'Stack 0',
+                borderWidth: 1
+            })),
+            ...TASK_STRUCTURE.Routine.map(sub => ({
+                label: sub.label,
+                data: employees.map(emp => emp.tasks.filter(t => t.name === sub.label).reduce((sum, t) => sum + t.hours, 0)),
+                backgroundColor: makePattern(routineColors[sub.label] || '#888'),
+                stack: 'Stack 0',
+                borderWidth: 1
+            }))
+        ];
+        // Add reserved bar for last 3 employees (mid-day reserved) as the lowest priority (last dataset)
+        let reservedBar = new Array(employees.length).fill(0);
+        if (employees.length >= 3) {
+            const reservedHours = 3;
+            for (let i = employees.length - 3; i < employees.length; i++) {
+                reservedBar[i] = reservedHours;
+            }
+            datasets.push({
+                label: 'Reserved for Priority Small - Mid-day',
+                data: reservedBar,
+                backgroundColor: '#b3c6ff',
+                stack: 'Stack 0',
+                borderWidth: 1
+            });
+        }
+        // Add autopsy reserved bar for the autopsy employee
+        let autopsyIdx = null;
+        if (employees.length >= 4) {
+            autopsyIdx = employees.length - 4;
+        } else if (employees.length > 0) {
+            autopsyIdx = employees.length - 1;
+        }
+        if (autopsyIdx !== null && autopsyIdx >= 0) {
+            const autopsyBar = new Array(employees.length).fill(0);
+            autopsyBar[autopsyIdx] = parseFloat(document.getElementById('workingHours').value) || 7;
+            datasets.unshift({
+                label: 'Autopsy Reserved',
+                data: autopsyBar,
+                backgroundColor: '#888888',
+                stack: 'Stack 0',
+                borderWidth: 1
+            });
+        }
+        window.priorityScheduleChart.data.labels = employees.length > 0 ? employees.map((emp, idx) => {
+            if (idx === autopsyIdx) {
+                return `PA ${emp.id} (Autopsy Reserved)`;
+            }
+            return `PA ${emp.id}`;
+        }) : ["PA 1"];
         window.priorityScheduleChart.data.datasets = datasets.length > 0 ? datasets : [
             {
-                label: 'No Priority Tasks',
+                label: 'No Tasks',
                 data: new Array(window.priorityScheduleChart.data.labels.length).fill(0),
                 backgroundColor: '#ccc',
                 stack: 'Stack 0',
@@ -297,10 +390,11 @@ function updatePriorityChart() {
             }
         ];
         window.priorityScheduleChart.update();
+        updateDailySummary();
     })
     .catch(() => {
         window.priorityScheduleChart.data.labels = ["PA 1"];
-        window.priorityScheduleChart.data.datasets = TASK_STRUCTURE.Priority.map(sub => ({
+        window.priorityScheduleChart.data.datasets = [...TASK_STRUCTURE.Priority, ...TASK_STRUCTURE.Routine].map(sub => ({
             label: sub.label,
             data: [0],
             backgroundColor: '#888',
@@ -308,5 +402,161 @@ function updatePriorityChart() {
             borderWidth: 1
         }));
         window.priorityScheduleChart.update();
+        updateDailySummary();
     });
 }
+
+// Daily summary card and chart update logic
+// Only add the Daily Summary section if it doesn't already exist
+if (!document.getElementById('dailySummaryCard')) {
+    const summaryCard = document.createElement('div');
+    summaryCard.className = 'card mb-4';
+    summaryCard.id = 'dailySummaryCard';
+    summaryCard.innerHTML = `
+        <div class="card-body">
+            <h5 class="card-title">Daily Summary</h5>
+            <div id="dailySummaryContent">
+                <div class="text-muted">Loading summary...</div>
+            </div>
+        </div>
+    `;
+    const container = document.querySelector('.container');
+    const chartCard = document.getElementById('priorityScheduleChartContainer').closest('.card');
+    if (chartCard && chartCard.nextSibling) {
+        container.insertBefore(summaryCard, chartCard.nextSibling);
+    } else {
+        container.appendChild(summaryCard);
+    }
+}
+
+// Fetch and render the summary
+function updateDailySummary() {
+    fetch(`${API_BASE}/summary`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            tasks,
+            availablePeople: document.getElementById('availablePeople').value,
+            workingHours: document.getElementById('workingHours').value
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        const content = document.getElementById('dailySummaryContent');
+        if (!content) return;
+        // Color logic for overtime, days, and outstanding tasks
+        const overtimeColor = data.overtime > 0 ? 'text-danger' : 'text-success';
+        const daysColor = data.estimatedDays > 1 ? 'text-warning' : 'text-success';
+        const outstandingColor = data.outstandingTasks > 0 ? 'text-danger' : 'text-success';
+        // Build breakdowns for outstanding and overtime by type
+        const taskOrder = [
+            'Priority Small',
+            'Priority Breast',
+            'Priority Sarcoma',
+            'Priority GI',
+            'Priority Gyne',
+            'Priority Head + Neck',
+            'Priority Miscellaneous',
+            'NICU Placentas',
+            'Priority Small - Mid-day',
+            'Routine Small',
+            'Routine Breast',
+            'Routine GI',
+            'Routine Gyne',
+            'Routine Head + Neck',
+            'Routine Miscellaneous',
+            'Routine Placenta',
+            'Non Tumour Bones'
+        ];
+        let outstandingBreakdown = '';
+        let overtimeBreakdown = '';
+        let hasOutstanding = false;
+        let hasOvertime = false;
+        taskOrder.forEach(type => {
+            if (data.outstandingByType && typeof data.outstandingByType[type] !== 'undefined' && data.outstandingByType[type] > 0) {
+                outstandingBreakdown += `<div class='small'>${type}: <span class='fw-bold'>${data.outstandingByType[type]}</span></div>`;
+                hasOutstanding = true;
+            }
+            if (data.overtimeByType && typeof data.overtimeByType[type] !== 'undefined' && data.overtimeByType[type] > 0) {
+                overtimeBreakdown += `<div class='small'>${type}: <span class='fw-bold'>${data.overtimeByType[type]}</span> hours</div>`;
+                hasOvertime = true;
+            }
+        });
+        content.innerHTML = `
+            <div class="d-flex justify-content-around flex-wrap text-center">
+                <div class="p-2 flex-fill">
+                    <div class="fs-2 fw-bold">${data.totalTasks}</div>
+                    <div class="small text-muted">Total Tasks</div>
+                </div>
+                <div class="p-2 flex-fill">
+                    <div class="fs-2 fw-bold">${data.totalHours}</div>
+                    <div class="small text-muted">Total Hours</div>
+                </div>
+                <div class="p-2 flex-fill">
+                    <div class="fs-2 fw-bold ${daysColor}">${data.estimatedDays}</div>
+                    <div class="small text-muted">Estimated Days to Complete</div>
+                </div>
+                <div class="p-2 flex-fill">
+                    <div class="fs-2 fw-bold ${outstandingColor}">${data.outstandingTasks}</div>
+                    <div class="small text-muted">Outstanding Tasks</div>
+                    ${hasOutstanding ? `<div class="mt-2 text-center">${outstandingBreakdown}</div>` : ''}
+                </div>
+                <div class="p-2 flex-fill">
+                    <div class="fs-2 fw-bold ${overtimeColor}">${data.overtime}</div>
+                    <div class="small text-muted">Overtime Required (hours)</div>
+                    ${hasOvertime ? `<div class="mt-2 text-center">${overtimeBreakdown}</div>` : ''}
+                </div>
+            </div>
+        `;
+    })
+    .catch(() => {
+        const content = document.getElementById('dailySummaryContent');
+        if (content) content.innerHTML = '<div class="text-danger">Failed to load summary.</div>';
+    });
+}
+// Initial call
+updateDailySummary();
+
+// Add Export to PDF button below the chart
+function addExportPDFButton() {
+    if (document.getElementById('exportPDFBtn')) return;
+    const chartCard = document.getElementById('priorityScheduleChartContainer').closest('.card');
+    const btnDiv = document.createElement('div');
+    btnDiv.className = 'text-end mb-2';
+    btnDiv.innerHTML = `<button id="exportPDFBtn" class="btn btn-secondary">Export Chart to PDF</button>`;
+    chartCard.insertBefore(btnDiv, chartCard.lastElementChild.nextSibling);
+    document.getElementById('exportPDFBtn').addEventListener('click', exportChartToPDF);
+}
+
+// Export chart to PDF using html2canvas and jsPDF
+function exportChartToPDF() {
+    const chartContainer = document.getElementById('priorityScheduleChartContainer');
+    if (!chartContainer) return;
+    // Use html2canvas to capture the chart
+    html2canvas(chartContainer.querySelector('canvas')).then(canvas => {
+        const imgData = canvas.toDataURL('image/png');
+        const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+        const pageWidth = pdf.internal.pageSize.getWidth();
+        const pageHeight = pdf.internal.pageSize.getHeight();
+        // Calculate image size to fit page
+        const imgWidth = pageWidth - 40;
+        const imgHeight = canvas.height * (imgWidth / canvas.width);
+        pdf.text('Daily Pathologist Assistant Assignment', 40, 40);
+        pdf.addImage(imgData, 'PNG', 40, 60, imgWidth, imgHeight);
+        pdf.save('PA_Assignment_Chart.pdf');
+    });
+}
+
+// Add CDN scripts for html2canvas and jsPDF if not present
+(function ensurePDFDeps() {
+    if (!window.html2canvas) {
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+        document.head.appendChild(s);
+    }
+    if (!window.jspdf) {
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js';
+        document.head.appendChild(s);
+    }
+})();

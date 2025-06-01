@@ -279,6 +279,8 @@ function updatePriorityChart() {
                 borderWidth: 1
             }));
             window.priorityScheduleChart.update();
+            // Also update summary to show zero state
+            updateDailySummary();
             return;
         }
         const colors = {
@@ -348,6 +350,7 @@ function updatePriorityChart() {
             }
         ];
         window.priorityScheduleChart.update();
+        updateDailySummary();
     })
     .catch(() => {
         window.priorityScheduleChart.data.labels = ["PA 1"];
@@ -359,5 +362,115 @@ function updatePriorityChart() {
             borderWidth: 1
         }));
         window.priorityScheduleChart.update();
+        updateDailySummary();
     });
+    // Only add the Daily Summary section if it doesn't already exist
+    if (!document.getElementById('dailySummaryCard')) {
+        const summaryCard = document.createElement('div');
+        summaryCard.className = 'card mb-4';
+        summaryCard.id = 'dailySummaryCard';
+        summaryCard.innerHTML = `
+            <div class="card-body">
+                <h5 class="card-title">Daily Summary</h5>
+                <div id="dailySummaryContent">
+                    <div class="text-muted">Loading summary...</div>
+                </div>
+            </div>
+        `;
+        const container = document.querySelector('.container');
+        const chartCard = document.getElementById('priorityScheduleChartContainer').closest('.card');
+        if (chartCard && chartCard.nextSibling) {
+            container.insertBefore(summaryCard, chartCard.nextSibling);
+        } else {
+            container.appendChild(summaryCard);
+        }
+    }
+
+    // Fetch and render the summary
+    function updateDailySummary() {
+        fetch(`${API_BASE}/summary`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                tasks,
+                availablePeople: document.getElementById('availablePeople').value,
+                workingHours: document.getElementById('workingHours').value
+            })
+        })
+        .then(res => res.json())
+        .then(data => {
+            const content = document.getElementById('dailySummaryContent');
+            if (!content) return;
+            // Color logic for overtime, days, and outstanding tasks
+            const overtimeColor = data.overtime > 0 ? 'text-danger' : 'text-success';
+            const daysColor = data.estimatedDays > 1 ? 'text-warning' : 'text-success';
+            const outstandingColor = data.outstandingTasks > 0 ? 'text-danger' : 'text-success';
+            // Build breakdowns for outstanding and overtime by type
+            const taskOrder = [
+                'Priority Small',
+                'Priority Breast',
+                'Priority Sarcoma',
+                'Priority GI',
+                'Priority Gyne',
+                'Priority Head + Neck',
+                'Priority Miscellaneous',
+                'NICU Placentas',
+                'Priority Small - Mid-day',
+                'Routine Small',
+                'Routine Breast',
+                'Routine GI',
+                'Routine Gyne',
+                'Routine Head + Neck',
+                'Routine Miscellaneous',
+                'Routine Placenta',
+                'Non Tumour Bones'
+            ];
+            let outstandingBreakdown = '';
+            let overtimeBreakdown = '';
+            let hasOutstanding = false;
+            let hasOvertime = false;
+            taskOrder.forEach(type => {
+                if (data.outstandingByType && typeof data.outstandingByType[type] !== 'undefined' && data.outstandingByType[type] > 0) {
+                    outstandingBreakdown += `<div class='small'>${type}: <span class='fw-bold'>${data.outstandingByType[type]}</span></div>`;
+                    hasOutstanding = true;
+                }
+                if (data.overtimeByType && typeof data.overtimeByType[type] !== 'undefined' && data.overtimeByType[type] > 0) {
+                    overtimeBreakdown += `<div class='small'>${type}: <span class='fw-bold'>${data.overtimeByType[type]}</span> hours</div>`;
+                    hasOvertime = true;
+                }
+            });
+            content.innerHTML = `
+                <div class="d-flex justify-content-around flex-wrap text-center">
+                    <div class="p-2 flex-fill">
+                        <div class="fs-2 fw-bold">${data.totalTasks}</div>
+                        <div class="small text-muted">Total Tasks</div>
+                    </div>
+                    <div class="p-2 flex-fill">
+                        <div class="fs-2 fw-bold">${data.totalHours}</div>
+                        <div class="small text-muted">Total Hours</div>
+                    </div>
+                    <div class="p-2 flex-fill">
+                        <div class="fs-2 fw-bold ${daysColor}">${data.estimatedDays}</div>
+                        <div class="small text-muted">Estimated Days to Complete</div>
+                    </div>
+                    <div class="p-2 flex-fill">
+                        <div class="fs-2 fw-bold ${outstandingColor}">${data.outstandingTasks}</div>
+                        <div class="small text-muted">Outstanding Tasks</div>
+                        ${hasOutstanding ? `<div class="mt-2 text-center">${outstandingBreakdown}</div>` : ''}
+                    </div>
+                    <div class="p-2 flex-fill">
+                        <div class="fs-2 fw-bold ${overtimeColor}">${data.overtime}</div>
+                        <div class="small text-muted">Overtime Required (hours)</div>
+                        ${hasOvertime ? `<div class="mt-2 text-center">${overtimeBreakdown}</div>` : ''}
+                    </div>
+                </div>
+            `;
+        })
+        .catch(() => {
+            const content = document.getElementById('dailySummaryContent');
+            if (content) content.innerHTML = '<div class="text-danger">Failed to load summary.</div>';
+        });
+    }
+    // Initial call
+    updateDailySummary();
 }

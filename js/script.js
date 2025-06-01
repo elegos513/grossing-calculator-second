@@ -196,7 +196,7 @@ function initializePriorityChart() {
     canvas.id = 'priorityScheduleChart';
     // Set explicit width/height to avoid 0x0 canvas
     canvas.width = 600;
-    canvas.height = 300;
+    canvas.height = 450;
     container.appendChild(canvas);
     const ctx = canvas.getContext('2d');
     // Fix: Only call destroy if the previous chart is a Chart instance
@@ -231,7 +231,19 @@ function initializePriorityChart() {
                             const dataset = context.dataset;
                             const index = context.dataIndex;
                             const hours = dataset.data[index];
+                            // Show count for each task (except Autopsy Reserved)
                             let label = `${dataset.label}: ${hours?.toFixed ? hours.toFixed(2) : 0} hours`;
+                            if (dataset.label !== 'Autopsy Reserved' && window.priorityScheduleChart && window.priorityScheduleChart.data && window.priorityScheduleChart.data.labels) {
+                                // Find the employee index
+                                const empIdx = index;
+                                // Find the employee data from the last API call
+                                if (window.lastEmployees && window.lastEmployees[empIdx]) {
+                                    const emp = window.lastEmployees[empIdx];
+                                    // Find the count for this task
+                                    const count = emp.case_counts && emp.case_counts[dataset.label] ? emp.case_counts[dataset.label] : 0;
+                                    label += `, ${count} assigned`;
+                                }
+                            }
                             return label;
                         }
                     }
@@ -255,6 +267,8 @@ function updatePriorityChart() {
     .then(res => res.json())
     .then(data => {
         const employees = data.employees || [];
+        // Store employees globally for tooltip access
+        window.lastEmployees = employees;
         if (employees.length === 0) {
             window.priorityScheduleChart.data.labels = ["PA 1"];
             window.priorityScheduleChart.data.datasets = TASK_STRUCTURE.Priority.map(sub => ({
@@ -285,7 +299,45 @@ function updatePriorityChart() {
             stack: 'Stack 0',
             borderWidth: 1
         }));
-        window.priorityScheduleChart.data.labels = employees.length > 0 ? employees.map(emp => `PA ${emp.id}`) : ["PA 1"];
+        // Add reserved bar for last 3 employees (mid-day reserved) as the lowest priority (last dataset)
+        let reservedBar = new Array(employees.length).fill(0);
+        if (employees.length >= 3) {
+            const reservedHours = 3;
+            for (let i = employees.length - 3; i < employees.length; i++) {
+                reservedBar[i] = reservedHours;
+            }
+            datasets.push({
+                label: 'Reserved for Priority Small - Mid-day',
+                data: reservedBar,
+                backgroundColor: '#b3c6ff',
+                stack: 'Stack 0',
+                borderWidth: 1
+            });
+        }
+        // Add autopsy reserved bar for the autopsy employee
+        let autopsyIdx = null;
+        if (employees.length >= 4) {
+            autopsyIdx = employees.length - 4;
+        } else if (employees.length > 0) {
+            autopsyIdx = employees.length - 1;
+        }
+        if (autopsyIdx !== null && autopsyIdx >= 0) {
+            const autopsyBar = new Array(employees.length).fill(0);
+            autopsyBar[autopsyIdx] = parseFloat(document.getElementById('workingHours').value) || 7;
+            datasets.unshift({
+                label: 'Autopsy Reserved',
+                data: autopsyBar,
+                backgroundColor: '#888888',
+                stack: 'Stack 0',
+                borderWidth: 1
+            });
+        }
+        window.priorityScheduleChart.data.labels = employees.length > 0 ? employees.map((emp, idx) => {
+            if (idx === autopsyIdx) {
+                return `PA ${emp.id} (Autopsy Reserved)`;
+            }
+            return `PA ${emp.id}`;
+        }) : ["PA 1"];
         window.priorityScheduleChart.data.datasets = datasets.length > 0 ? datasets : [
             {
                 label: 'No Priority Tasks',

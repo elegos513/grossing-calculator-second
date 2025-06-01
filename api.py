@@ -80,7 +80,8 @@ def distribute_tasks(tasks, available_people, working_hours):
             continue
         rate_per_7h = TASK_RATES.get(task_name, 1)
         rate = rate_per_7h * (working_hours / 7)
-        hours_per_task = 1 / rate * working_hours if rate > 0 else working_hours
+        # Use hours_per_task = working_hours / rate instead of 1 / rate * working_hours
+        hours_per_task = working_hours / rate if rate > 0 else working_hours
         count = int(task['count'])
         for idx, emp in enumerate(employees):
             if autopsy_employee and emp['id'] == autopsy_employee['id']:
@@ -107,7 +108,8 @@ def distribute_tasks(tasks, available_people, working_hours):
     if task and task['count'] > 0:
         rate_per_7h = TASK_RATES.get('Priority Small - Mid-day', 1)
         rate = rate_per_7h * (working_hours / 7)
-        hours_per_task = 1 / rate * working_hours if rate > 0 else working_hours
+        # Use hours_per_task = working_hours / rate for consistency
+        hours_per_task = working_hours / rate if rate > 0 else working_hours
         count = int(task['count'])
         for emp in reserved_employees:
             if autopsy_employee and emp['id'] == autopsy_employee['id']:

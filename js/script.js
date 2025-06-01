@@ -280,6 +280,8 @@ function updatePriorityChart() {
                 borderWidth: 1
             }));
             window.priorityScheduleChart.update();
+            // Enable export button only if there is data (at least one nonzero bar)
+            setExportPDFButtonEnabled(false);
             updateDailySummary();
             return;
         }
@@ -390,6 +392,9 @@ function updatePriorityChart() {
             }
         ];
         window.priorityScheduleChart.update();
+        // Enable export button only if there is data (at least one nonzero bar)
+        const hasData = datasets.some(ds => Array.isArray(ds.data) && ds.data.some(val => val > 0));
+        setExportPDFButtonEnabled(hasData);
         updateDailySummary();
     })
     .catch(() => {
@@ -402,6 +407,7 @@ function updatePriorityChart() {
             borderWidth: 1
         }));
         window.priorityScheduleChart.update();
+        setExportPDFButtonEnabled(false);
         updateDailySummary();
     });
 }
@@ -519,32 +525,55 @@ updateDailySummary();
 
 // Add Export to PDF button below the chart
 function addExportPDFButton() {
-    if (document.getElementById('exportPDFBtn')) return;
-    const chartCard = document.getElementById('priorityScheduleChartContainer').closest('.card');
-    const btnDiv = document.createElement('div');
-    btnDiv.className = 'text-end mb-2';
-    btnDiv.innerHTML = `<button id="exportPDFBtn" class="btn btn-secondary">Export Chart to PDF</button>`;
-    chartCard.insertBefore(btnDiv, chartCard.lastElementChild.nextSibling);
-    document.getElementById('exportPDFBtn').addEventListener('click', exportChartToPDF);
+    let btn = document.getElementById('exportPDFBtn');
+    if (!btn) {
+        const chartCard = document.getElementById('priorityScheduleChartContainer').closest('.card');
+        const btnDiv = document.createElement('div');
+        btnDiv.className = 'text-end mb-2';
+        btnDiv.innerHTML = `<button id="exportPDFBtn" class="btn btn-secondary" disabled>Export Chart to PDF</button>`;
+        chartCard.insertBefore(btnDiv, chartCard.lastElementChild.nextSibling);
+        btn = document.getElementById('exportPDFBtn');
+        btn.addEventListener('click', exportChartToPDF);
+    }
+    btn.disabled = true; // Start disabled
+}
+
+// Enable or disable the export button based on chart data
+function setExportPDFButtonEnabled(enabled) {
+    const btn = document.getElementById('exportPDFBtn');
+    if (btn) btn.disabled = !enabled;
 }
 
 // Export chart to PDF using html2canvas and jsPDF
 function exportChartToPDF() {
     const chartContainer = document.getElementById('priorityScheduleChartContainer');
     if (!chartContainer) return;
-    // Use html2canvas to capture the chart
-    html2canvas(chartContainer.querySelector('canvas')).then(canvas => {
-        const imgData = canvas.toDataURL('image/png');
-        const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
-        const pageWidth = pdf.internal.pageSize.getWidth();
-        const pageHeight = pdf.internal.pageSize.getHeight();
-        // Calculate image size to fit page
-        const imgWidth = pageWidth - 40;
-        const imgHeight = canvas.height * (imgWidth / canvas.width);
-        pdf.text('Daily Pathologist Assistant Assignment', 40, 40);
-        pdf.addImage(imgData, 'PNG', 40, 60, imgWidth, imgHeight);
-        pdf.save('PA_Assignment_Chart.pdf');
-    });
+    // Wait for libraries to load if needed
+    function doExport() {
+        const canvasElem = chartContainer.querySelector('canvas');
+        if (!canvasElem) return;
+        window.html2canvas(canvasElem).then(canvas => {
+            // jsPDF v2+ uses window.jspdf.jsPDF
+            const jsPDF = window.jspdf && window.jspdf.jsPDF ? window.jspdf.jsPDF : window.jsPDF;
+            const imgData = canvas.toDataURL('image/png');
+            const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+            const pageWidth = pdf.internal.pageSize.getWidth();
+            const imgWidth = pageWidth - 40;
+            const imgHeight = canvas.height * (imgWidth / canvas.width);
+            pdf.text('Daily Pathologist Assistant Assignment', 40, 40);
+            pdf.addImage(imgData, 'PNG', 40, 60, imgWidth, imgHeight);
+            pdf.save('PA_Assignment_Chart.pdf');
+        });
+    }
+    // Wait for html2canvas and jsPDF to be loaded
+    function waitForLibs(cb) {
+        if (window.html2canvas && ((window.jspdf && window.jspdf.jsPDF) || window.jsPDF)) {
+            cb();
+        } else {
+            setTimeout(() => waitForLibs(cb), 200);
+        }
+    }
+    waitForLibs(doExport);
 }
 
 // Add CDN scripts for html2canvas and jsPDF if not present
@@ -554,7 +583,7 @@ function exportChartToPDF() {
         s.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
         document.head.appendChild(s);
     }
-    if (!window.jspdf) {
+    if (!window.jspdf && !window.jsPDF) {
         const s = document.createElement('script');
         s.src = 'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js';
         document.head.appendChild(s);

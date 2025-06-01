@@ -3,7 +3,7 @@ let tasks = [];
 let priorityScheduleChart;
 
 // Use only the hosted API URL
-const API_BASE = 'https://grossing-calculator-second.onrender.com/api';
+const API_BASE = 'https://grossing-calculator-second.onrender.com/';
 
 const TASK_STRUCTURE = {
     Priority: [

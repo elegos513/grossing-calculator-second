@@ -254,7 +254,7 @@ function initializePriorityChart() {
 
 function updatePriorityChart() {
     collectTasks();
-    fetch(`${API_BASE}/schedule`, {
+    fetch(`${API_BASE}/api/schedule`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -434,7 +434,7 @@ if (!document.getElementById('dailySummaryCard')) {
 
 // Fetch and render the summary
 function updateDailySummary() {
-    fetch(`${API_BASE}/summary`, {
+    fetch(`${API_BASE}/api/summary`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

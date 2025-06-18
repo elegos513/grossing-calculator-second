@@ -2,8 +2,8 @@
 let tasks = [];
 
 // Use only the hosted API URL
-//const API_BASE = 'https://grossing-calculator-second.onrender.com';  //uncomment this line before deploying
-const API_BASE = 'http://127.0.0.1:5000';  // Uncomment this line when testing locally
+const API_BASE = 'https://grossing-calculator-second.onrender.com';  //uncomment this line before deploying
+//const API_BASE = 'http://127.0.0.1:5000';  // Uncomment this line when testing locally
 
 const TASK_STRUCTURE = {
     Priority: [

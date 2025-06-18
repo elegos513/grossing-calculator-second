@@ -1,9 +1,9 @@
 // Project Assignments Scheduling Tool - JS+Python API version
 let tasks = [];
-let priorityScheduleChart;
 
 // Use only the hosted API URL
-const API_BASE = 'https://grossing-calculator-second.onrender.com';
+//const API_BASE = 'https://grossing-calculator-second.onrender.com';  //uncomment this line before deploying
+const API_BASE = 'http://127.0.0.1:5000';  // Uncomment this line when testing locally
 
 const TASK_STRUCTURE = {
     Priority: [
@@ -15,7 +15,6 @@ const TASK_STRUCTURE = {
         { id: 'priorityHeadNeck', label: 'Priority Head + Neck' },
         { id: 'priorityMiscellaneous', label: 'Priority Miscellaneous' },
         { id: 'nicuPlacentas', label: 'NICU Placentas' }
-        // Removed Priority Small - Mid-day from input fields
     ],
     Routine: [
         { id: 'routineSmall', label: 'Routine Small' },
@@ -62,56 +61,46 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 });
 
+function renderSection(sectionName, sectionData) {
+    const taskInputs = document.getElementById('taskInputs');
+    let header = document.createElement('h5');
+    header.textContent = sectionName;
+    header.className = 'text-center fw-bold';
+    taskInputs.appendChild(header);
+    let row = document.createElement('div');
+    row.className = 'row';
+    sectionData.forEach((sub, index) => {
+        if (index % 4 === 0 && index !== 0) {
+            taskInputs.appendChild(row);
+            row = document.createElement('div');
+            row.className = 'row';
+        }
+        const col = document.createElement('div');
+        col.className = 'col-md-3 mb-3';
+        col.innerHTML = `
+            <label for="${sub.id}" class="form-label">${sub.label}</label>
+            <input type="number" class="form-control" id="${sub.id}" min="0" value="0">
+        `;
+        row.appendChild(col);
+    });
+    taskInputs.appendChild(row);
+}
+
 function renderTaskInputs() {
     const taskInputs = document.getElementById('taskInputs');
-    // Clear existing content
     taskInputs.innerHTML = '';
+    renderSection('Priority', TASK_STRUCTURE.Priority);
+    renderSection('Routine', TASK_STRUCTURE.Routine);
+}
 
-    // Priority Section
-    let priorityHeader = document.createElement('h5');
-    priorityHeader.textContent = 'Priority';
-    priorityHeader.className = 'text-center fw-bold';
-    taskInputs.appendChild(priorityHeader);
-    let priorityRow = document.createElement('div');
-    priorityRow.className = 'row';
-    TASK_STRUCTURE.Priority.forEach((sub, index) => {
-        if (index % 4 === 0 && index !== 0) {
-            taskInputs.appendChild(priorityRow);
-            priorityRow = document.createElement('div');
-            priorityRow.className = 'row';
-        }
-        const col = document.createElement('div');
-        col.className = 'col-md-3 mb-3';
-        col.innerHTML = `
-            <label for="${sub.id}" class="form-label">${sub.label}</label>
-            <input type="number" class="form-control" id="${sub.id}" min="0" value="0">
-        `;
-        priorityRow.appendChild(col);
-    });
-    taskInputs.appendChild(priorityRow);
-
-    // Routine Section
-    let routineHeader = document.createElement('h5');
-    routineHeader.textContent = 'Routine';
-    routineHeader.className = 'text-center fw-bold';
-    taskInputs.appendChild(routineHeader);
-    let routineRow = document.createElement('div');
-    routineRow.className = 'row';
-    TASK_STRUCTURE.Routine.forEach((sub, index) => {
-        if (index % 4 === 0 && index !== 0) {
-            taskInputs.appendChild(routineRow);
-            routineRow = document.createElement('div');
-            routineRow.className = 'row';
-        }
-        const col = document.createElement('div');
-        col.className = 'col-md-3 mb-3';
-        col.innerHTML = `
-            <label for="${sub.id}" class="form-label">${sub.label}</label>
-            <input type="number" class="form-control" id="${sub.id}" min="0" value="0">
-        `;
-        routineRow.appendChild(col);
-    });
-    taskInputs.appendChild(routineRow);
+function validateInputField(el, validator, errorMsg) {
+    if (!validator(el.value)) {
+        el.classList.add('is-invalid');
+        return errorMsg;
+    } else {
+        el.classList.remove('is-invalid');
+        return '';
+    }
 }
 
 function validateInputs() {
@@ -119,43 +108,26 @@ function validateInputs() {
     let errorMsg = '';
     // Validate availablePeople
     const people = document.getElementById('availablePeople');
-    if (!people.value || isNaN(people.value) || parseInt(people.value) < 1) {
-        valid = false;
-        errorMsg = 'Available People must be a positive integer.';
-        people.classList.add('is-invalid');
-    } else {
-        people.classList.remove('is-invalid');
-    }
+    errorMsg = validateInputField(
+        people,
+        v => v && !isNaN(v) && parseInt(v) >= 1,
+        'Available People must be a positive integer.'
+    ) || errorMsg;
     // Validate workingHours
     const hours = document.getElementById('workingHours');
-    if (!hours.value || isNaN(hours.value) || parseInt(hours.value) < 1 || parseInt(hours.value) > 24) {
-        valid = false;
-        errorMsg = 'Working Hours must be between 1 and 24.';
-        hours.classList.add('is-invalid');
-    } else {
-        hours.classList.remove('is-invalid');
-    }
-    // Validate all Priority subcategory inputs
-    TASK_STRUCTURE.Priority.forEach(sub => {
+    errorMsg = validateInputField(
+        hours,
+        v => v && !isNaN(v) && parseInt(v) >= 1 && parseInt(v) <= 24,
+        'Working Hours must be between 1 and 24.'
+    ) || errorMsg;
+    // Validate all Priority and Routine subcategory inputs
+    [...TASK_STRUCTURE.Priority, ...TASK_STRUCTURE.Routine].forEach(sub => {
         const el = document.getElementById(sub.id);
-        if (!el.value || isNaN(el.value) || parseInt(el.value) < 0) {
-            valid = false;
-            errorMsg = 'All task counts must be 0 or a positive integer.';
-            el.classList.add('is-invalid');
-        } else {
-            el.classList.remove('is-invalid');
-        }
-    });
-    // Validate all Routine subcategory inputs
-    TASK_STRUCTURE.Routine.forEach(sub => {
-        const el = document.getElementById(sub.id);
-        if (!el.value || isNaN(el.value) || parseInt(el.value) < 0) {
-            valid = false;
-            errorMsg = 'All task counts must be 0 or a positive integer.';
-            el.classList.add('is-invalid');
-        } else {
-            el.classList.remove('is-invalid');
-        }
+        errorMsg = validateInputField(
+            el,
+            v => v !== '' && !isNaN(v) && parseInt(v) >= 0,
+            'All task counts must be 0 or a positive integer.'
+        ) || errorMsg;
     });
     // Show error message if invalid
     let errorDiv = document.getElementById('inputError');
@@ -166,9 +138,10 @@ function validateInputs() {
         const container = document.querySelector('.container');
         container.insertBefore(errorDiv, container.firstChild.nextSibling);
     }
-    if (!valid) {
+    if (errorMsg) {
         errorDiv.textContent = errorMsg;
         errorDiv.style.display = 'block';
+        valid = false;
     } else {
         errorDiv.style.display = 'none';
     }
@@ -291,8 +264,7 @@ function updatePriorityChart() {
             'Priority Gyne': '#e74c3c',
             'Priority Head + Neck': '#34495e',
             'Priority Miscellaneous': '#f1c40f',
-            'NICU Placentas': '#2ecc71',
-            'Priority Small - Mid-day': '#d35400'
+            'NICU Placentas': '#2ecc71'
         };
         // Routine: use a pattern/texture
         // We'll use Chart.js pattern plugin if available, or fallback to semi-transparent colors
@@ -461,7 +433,6 @@ function updateDailySummary() {
             'Priority Head + Neck',
             'Priority Miscellaneous',
             'NICU Placentas',
-            'Priority Small - Mid-day',
             'Routine Small',
             'Routine Breast',
             'Routine GI',
@@ -532,13 +503,22 @@ function addExportPDFButton() {
         btn = document.getElementById('exportPDFBtn');
         btn.addEventListener('click', exportChartToPDF);
     }
-    btn.disabled = true; // Start disabled
+    // No need to set btn.disabled here; chart update logic will handle it
 }
 
 // Enable or disable the export button based on chart data
 function setExportPDFButtonEnabled(enabled) {
     const btn = document.getElementById('exportPDFBtn');
-    if (btn) btn.disabled = !enabled;
+    if (btn) {
+        btn.disabled = !enabled;
+        if (enabled) {
+            btn.classList.remove('btn-secondary');
+            btn.classList.add('btn-primary');
+        } else {
+            btn.classList.remove('btn-primary');
+            btn.classList.add('btn-secondary');
+        }
+    }
 }
 
 // Export chart to PDF using html2canvas and jsPDF

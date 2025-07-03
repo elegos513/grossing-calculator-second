@@ -336,7 +336,7 @@ function updatePriorityChart() {
         }
         if (autopsyIdx !== null && autopsyIdx >= 0) {
             const autopsyBar = new Array(employees.length).fill(0);
-            autopsyBar[autopsyIdx] = parseFloat(document.getElementById('workingHours').value) || 7;
+            autopsyBar[autopsyIdx] = parseFloat(document.getElementById('workingHours').value) || 6.5;
             datasets.unshift({
                 label: 'Autopsy Reserved',
                 data: autopsyBar,

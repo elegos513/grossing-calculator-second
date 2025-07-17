@@ -72,14 +72,72 @@ def distribute_tasks(tasks, available_people, working_hours):
     ]
     
     # Reserve the last two PAs for autopsy (assign their entire shift to autopsy and exclude from other assignments)
+    # But exclude PA 3 from autopsy consideration since PA 3 has special Prep assignment
     autopsy_count = 2 if len(employees) >= 2 else len(employees)
-    autopsy_employees = employees[-autopsy_count:] if autopsy_count > 0 else []
-    assignment_employees = employees[:-autopsy_count] if autopsy_count > 0 else employees[:]
+    autopsy_employees = []
+    assignment_employees = []
+    
+    for i, emp in enumerate(employees):
+        # Last two PAs go to autopsy, but PA 3 is excluded (PA 3 gets Prep instead)
+        if len(employees) - i <= autopsy_count and emp['id'] != 3:
+            autopsy_employees.append(emp)
+        else:
+            assignment_employees.append(emp)
+    
     for emp in autopsy_employees:
         emp['tasks'] = [{'name': 'Autopsy', 'hours': working_hours}]
         emp['hours'] = working_hours
         # Don't include autopsy in case_counts since it's not part of the input tasks
         emp['case_counts'] = {}
+
+    # Reserve the second half of PA 3's shift for Prep (if PA 3 exists in assignment_employees)
+    pa3 = next((emp for emp in assignment_employees if emp['id'] == 3), None)
+    if pa3:
+        prep_hours = working_hours / 2  # Second half of the shift
+        pa3['tasks'].append({'name': 'Prep', 'hours': prep_hours})
+        pa3['hours'] += prep_hours
+
+    # Pre-allocate tasks for PA 3's first half to ensure they get regular tasks
+    # This happens before the main assignment loops
+    if pa3:
+        # PA 3 can work 3.25 hours (first half) for regular tasks
+        pa3_available_hours = working_hours / 2
+        
+        # Try to assign tasks to PA 3 first, going through priority order
+        for task_name in priority_order:
+            # Skip Priority Small (reserved for PA 1)
+            if task_name == 'Priority Small':
+                continue
+                
+            task = next((t for t in tasks_copy if t['name'] == task_name), None)
+            if not task or task['count'] <= 0:
+                continue
+                
+            rate_per_6_5h = TASK_RATES.get(task_name, 1)
+            
+            # Calculate how many tasks PA 3 can handle in their first half
+            max_tasks_for_pa3 = int(pa3_available_hours * rate_per_6_5h // 6.5)
+            tasks_to_assign = min(task['count'], max_tasks_for_pa3)
+            
+            if tasks_to_assign > 0:
+                # Calculate hours per task for tracking
+                tasks_per_shift = rate_per_6_5h * working_hours / 6.5
+                hours_per_task = working_hours / tasks_per_shift if tasks_per_shift > 0 else 0
+                
+                # Assign tasks to PA 3
+                pa3['tasks'].extend({'name': task_name, 'hours': hours_per_task} for _ in range(tasks_to_assign))
+                pa3['hours'] += hours_per_task * tasks_to_assign
+                pa3['case_counts'][task_name] = pa3['case_counts'].get(task_name, 0) + tasks_to_assign
+                
+                # Reduce the available task count
+                task['count'] -= tasks_to_assign
+                
+                # Update available hours for PA 3
+                pa3_available_hours -= hours_per_task * tasks_to_assign
+                
+                # If PA 3's first half is full, stop
+                if pa3_available_hours <= 0:
+                    break
 
     # Step 1: Assign Priority Small to PA 1 for their full shift and fill remaining time
     priority_small_task = next((t for t in tasks_copy if t['name'] == 'Priority Small'), None)
@@ -119,6 +177,10 @@ def distribute_tasks(tasks, available_people, working_hours):
     # Step 2: Assign all Priority tasks (including remaining Priority Small)
     # For Priority Small overflow: assign to next available PAs (excluding PA 1)
     for task_name in priority_order:
+        # Only process Priority tasks in this step
+        if not task_name.startswith('Priority') and task_name != 'NICU Placentas':
+            continue
+            
         task = next((t for t in tasks_copy if t['name'] == task_name), None)
         if not task or task['count'] <= 0:
             continue
@@ -132,12 +194,24 @@ def distribute_tasks(tasks, available_people, working_hours):
                 continue
 
             max_assignable = working_hours
+            # For PA 3, they can only be assigned regular tasks for the first half of their shift
+            # The second half is already reserved for Prep
+            if emp['id'] == 3:
+                max_assignable = working_hours / 2  # Only first half available for regular tasks
+                # But emp['hours'] already includes the Prep time, so we need to adjust
+                prep_hours = working_hours / 2
+                # Available hours for regular tasks = first half - (current hours - prep hours)
+                emp_regular_hours = emp['hours'] - prep_hours if emp['hours'] >= prep_hours else emp['hours']
+                available_hours = max_assignable - emp_regular_hours
+            else:
+                emp_hours = emp['hours']
+                available_hours = max_assignable - emp_hours
 
-            emp_hours = emp['hours']
-            available_hours = max_assignable - emp_hours
-
-            # Use integer math for task assignment
-            max_tasks_for_emp = min(count, int(available_hours * rate_per_6_5h // 6.5))
+            if emp['id'] != 3:  # For non-PA3, use the original calculation
+                # Use integer math for task assignment
+                max_tasks_for_emp = min(count, int(available_hours * rate_per_6_5h // 6.5))
+            else:  # For PA 3, use the adjusted available_hours
+                max_tasks_for_emp = min(count, int(available_hours * rate_per_6_5h // 6.5))
 
             if max_tasks_for_emp > 0:
                 # Calculate hours_per_task for tracking
@@ -170,11 +244,24 @@ def distribute_tasks(tasks, available_people, working_hours):
                 continue
 
             max_assignable = working_hours
-            emp_hours = emp['hours']
-            available_hours = max_assignable - emp_hours
+            # For PA 3, they can only be assigned regular tasks for the first half of their shift
+            # The second half is already reserved for Prep
+            if emp['id'] == 3:
+                max_assignable = working_hours / 2  # Only first half available for regular tasks
+                # But emp['hours'] already includes the Prep time, so we need to adjust
+                prep_hours = working_hours / 2
+                # Available hours for regular tasks = first half - (current hours - prep hours)
+                emp_regular_hours = emp['hours'] - prep_hours if emp['hours'] >= prep_hours else emp['hours']
+                available_hours = max_assignable - emp_regular_hours
+            else:
+                emp_hours = emp['hours']
+                available_hours = max_assignable - emp_hours
 
-            # Use integer math for task assignment
-            max_tasks_for_emp = min(count, int(available_hours * rate_per_6_5h // 6.5))
+            if emp['id'] != 3:  # For non-PA3, use the original calculation
+                # Use integer math for task assignment
+                max_tasks_for_emp = min(count, int(available_hours * rate_per_6_5h // 6.5))
+            else:  # For PA 3, use the adjusted available_hours
+                max_tasks_for_emp = min(count, int(available_hours * rate_per_6_5h // 6.5))
 
             if max_tasks_for_emp > 0:
                 # Calculate hours_per_task for tracking

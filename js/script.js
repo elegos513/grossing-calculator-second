@@ -2,8 +2,8 @@
 let tasks = [];
 
 // Use only the hosted API URL
-//const API_BASE = 'https://grossing-calculator-second.onrender.com';  //uncomment this line before deploying
-const API_BASE = 'http://127.0.0.1:5000';  // Uncomment this line when testing locally
+const API_BASE = 'https://grossing-calculator-second.onrender.com';  //uncomment this line before deploying
+//const API_BASE = 'http://127.0.0.1:5000';  // Uncomment this line when testing locally
 
 const TASK_STRUCTURE = {
     Priority: [
@@ -213,6 +213,7 @@ function initializePriorityChart() {
                                     
                                     // Check if this is an autopsy employee (has autopsy task but no case counts for regular tasks)
                                     const hasAutopsyTask = emp.tasks && emp.tasks.some(t => t.name === 'Autopsy');
+                                    const hasPrepTask = emp.tasks && emp.tasks.some(t => t.name === 'Prep');
                                     const hasCaseCounts = emp.case_counts && Object.keys(emp.case_counts).length > 0;
                                     
                                     // If this is an autopsy employee and the dataset is not autopsy, don't show tooltip
@@ -230,6 +231,11 @@ function initializePriorityChart() {
                                     // For autopsy, show a special message
                                     if (dataset.label === 'Autopsy' && hasAutopsyTask) {
                                         return `${dataset.label}: Full shift assigned`;
+                                    }
+                                    
+                                    // For prep, show a special message without count
+                                    if (dataset.label === 'Prep' && hasPrepTask) {
+                                        return `${dataset.label}: Half shift assigned`;
                                     }
                                 }
                             }
@@ -336,6 +342,18 @@ function updatePriorityChart() {
                 label: 'Autopsy',
                 data: employees.map(emp => emp.tasks.filter(t => t.name === 'Autopsy').reduce((sum, t) => sum + t.hours, 0)),
                 backgroundColor: '#888888',
+                stack: 'Stack 0',
+                borderWidth: 1
+            });
+        }
+        
+        // Add Prep bar if any PA has Prep assigned
+        const hasPrep = employees.some(emp => emp.tasks.some(t => t.name === 'Prep'));
+        if (hasPrep) {
+            datasets.push({
+                label: 'Prep',
+                data: employees.map(emp => emp.tasks.filter(t => t.name === 'Prep').reduce((sum, t) => sum + t.hours, 0)),
+                backgroundColor: '#95a5a6',
                 stack: 'Stack 0',
                 borderWidth: 1
             });

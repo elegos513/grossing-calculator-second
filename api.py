@@ -43,11 +43,15 @@ def distribute_tasks(tasks, available_people, working_hours):
     if not tasks or available_people < 1:
         return [], {}
     
+    # Create a deep copy of tasks to avoid modifying the original
+    import copy
+    tasks_copy = copy.deepcopy(tasks)
+    
     employees = [
         {'id': i + 1, 'tasks': [], 'hours': 0, 'case_counts': {}}
         for i in range(available_people)
     ]
-    outstanding = {task['name']: 0 for task in tasks}
+    outstanding = {task['name']: 0 for task in tasks_copy}
     priority_order = [
         'Priority Small',
         'Priority Breast',
@@ -74,10 +78,11 @@ def distribute_tasks(tasks, available_people, working_hours):
     for emp in autopsy_employees:
         emp['tasks'] = [{'name': 'Autopsy', 'hours': working_hours}]
         emp['hours'] = working_hours
-        emp['case_counts'] = {'Autopsy': 1}
+        # Don't include autopsy in case_counts since it's not part of the input tasks
+        emp['case_counts'] = {}
 
     # Step 1: Assign Priority Small to PA 1 for their full shift and fill remaining time
-    priority_small_task = next((t for t in tasks if t['name'] == 'Priority Small'), None)
+    priority_small_task = next((t for t in tasks_copy if t['name'] == 'Priority Small'), None)
     if priority_small_task and priority_small_task['count'] > 0:
         rate_per_6_5h = TASK_RATES.get('Priority Small', 1)
         count = int(priority_small_task['count'])
@@ -114,7 +119,7 @@ def distribute_tasks(tasks, available_people, working_hours):
     # Step 2: Assign all Priority tasks (including remaining Priority Small)
     # For Priority Small overflow: assign to next available PAs (excluding PA 1)
     for task_name in priority_order:
-        task = next((t for t in tasks if t['name'] == task_name), None)
+        task = next((t for t in tasks_copy if t['name'] == task_name), None)
         if not task or task['count'] <= 0:
             continue
 
@@ -153,7 +158,7 @@ def distribute_tasks(tasks, available_people, working_hours):
     for task_name in priority_order:
         if not task_name.startswith('Routine'):
             continue
-        task = next((t for t in tasks if t['name'] == task_name), None)
+        task = next((t for t in tasks_copy if t['name'] == task_name), None)
         if not task or task['count'] <= 0:
             continue
 
@@ -195,19 +200,25 @@ def distribute_tasks(tasks, available_people, working_hours):
         for emp in employees
     ], outstanding
 
-def calculate_task_hours_and_overtime(tasks, available_people, working_hours, outstanding):
-    total_tasks = sum(task['count'] for task in tasks)
+def calculate_task_hours_and_overtime(original_tasks, available_people, working_hours, outstanding):
+    # Use original task counts for accurate calculation, not modified ones
+    total_tasks = sum(task['count'] for task in original_tasks)
     total_hours = 0
     overtime_by_type = {}
-    for task in tasks:
+    
+    # Calculate total hours based on original task counts
+    for task in original_tasks:
         rate_per_6_5h = TASK_RATES.get(task['name'], 1)
         rate = rate_per_6_5h * (working_hours / 6.5)
         hours_per_task = 1 / rate * working_hours if rate > 0 else working_hours
         total_hours += task['count'] * hours_per_task
+    
     estimated_days = math.ceil(total_hours / (available_people * working_hours)) if available_people and working_hours else 0
     total_outstanding = sum(outstanding.values())
     overtime = 0
-    for task in tasks:
+    
+    # Calculate overtime based on outstanding tasks
+    for task in original_tasks:
         name = task['name']
         outstanding_count = outstanding.get(name, 0)
         if outstanding_count > 0:
@@ -218,6 +229,7 @@ def calculate_task_hours_and_overtime(tasks, available_people, working_hours, ou
             overtime += outstanding_count * hours_per_task
         else:
             overtime_by_type[name] = 0
+    
     overtime = round(overtime, 2)
     return {
         'totalTasks': total_tasks,
@@ -267,6 +279,7 @@ def api_summary():
     if not valid:
         return jsonify({'error': error}), 400
     employees, outstanding = distribute_tasks(tasks, available_people, working_hours)
+    # Pass original tasks to summary calculation
     summary = calculate_task_hours_and_overtime(tasks, available_people, working_hours, outstanding)
     return jsonify(summary)
 
@@ -280,6 +293,7 @@ def api_schedule_and_summary():
     if not valid:
         return jsonify({'error': error}), 400
     employees, outstanding = distribute_tasks(tasks, available_people, working_hours)
+    # Pass original tasks to summary calculation
     summary = calculate_task_hours_and_overtime(tasks, available_people, working_hours, outstanding)
     return jsonify({
         'employees': employees,

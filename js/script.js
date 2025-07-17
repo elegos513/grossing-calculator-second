@@ -2,8 +2,8 @@
 let tasks = [];
 
 // Use only the hosted API URL
-const API_BASE = 'https://grossing-calculator-second.onrender.com';  //uncomment this line before deploying
-//const API_BASE = 'http://127.0.0.1:5000';  // Uncomment this line when testing locally
+//const API_BASE = 'https://grossing-calculator-second.onrender.com';  //uncomment this line before deploying
+const API_BASE = 'http://127.0.0.1:5000';  // Uncomment this line when testing locally
 
 const TASK_STRUCTURE = {
     Priority: [
@@ -210,11 +210,30 @@ function initializePriorityChart() {
                                 const empIdx = index;
                                 if (window.lastEmployees && window.lastEmployees[empIdx]) {
                                     const emp = window.lastEmployees[empIdx];
+                                    
+                                    // Check if this is an autopsy employee (has autopsy task but no case counts for regular tasks)
+                                    const hasAutopsyTask = emp.tasks && emp.tasks.some(t => t.name === 'Autopsy');
+                                    const hasCaseCounts = emp.case_counts && Object.keys(emp.case_counts).length > 0;
+                                    
+                                    // If this is an autopsy employee and the dataset is not autopsy, don't show tooltip
+                                    if (hasAutopsyTask && !hasCaseCounts && dataset.label !== 'Autopsy') {
+                                        return null; // This will hide the tooltip for this dataset
+                                    }
+                                    
                                     const count = emp.case_counts && emp.case_counts[dataset.label] ? emp.case_counts[dataset.label] : 0;
-                                    return `${dataset.label}: ${count} assigned`;
+                                    
+                                    // Only show tooltip if there are actual cases assigned
+                                    if (count > 0) {
+                                        return `${dataset.label}: ${count} assigned`;
+                                    }
+                                    
+                                    // For autopsy, show a special message
+                                    if (dataset.label === 'Autopsy' && hasAutopsyTask) {
+                                        return `${dataset.label}: Full shift assigned`;
+                                    }
                                 }
                             }
-                            return `${dataset.label}: 0 assigned`;
+                            return null; // Hide tooltip for 0 cases
                         }
                     }
                 }
@@ -377,6 +396,7 @@ if (!document.getElementById('dailySummaryCard')) {
 
 // Fetch and render the summary
 function updateDailySummary() {
+    console.log('Tasks being sent to summary:', tasks); // Debug log
     fetch(`${API_BASE}/api/summary`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -388,6 +408,7 @@ function updateDailySummary() {
     })
     .then(res => res.json())
     .then(data => {
+        console.log('Summary data received:', data); // Debug log
         const content = document.getElementById('dailySummaryContent');
         if (!content) return;
         // Color logic for overtime, days, and outstanding tasks
@@ -459,8 +480,6 @@ function updateDailySummary() {
         if (content) content.innerHTML = '<div class="text-danger">Failed to load summary.</div>';
     });
 }
-// Initial call
-updateDailySummary();
 
 // Add Export to PDF button below the chart
 function addExportPDFButton() {

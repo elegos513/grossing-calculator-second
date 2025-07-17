@@ -67,37 +67,23 @@ def distribute_tasks(tasks, available_people, working_hours):
         'Non Tumour Bones'
     ]
     
-    # Reserve two entire employee shifts for Autopsy
-    autopsy_employees = []
-    if employees:
-        if len(employees) >= 4:
-            # Reserve the last two employees for autopsy
-            autopsy_employees = employees[-2:]
-            for emp in autopsy_employees:
-                emp['autopsy_reserved'] = True
-        elif len(employees) >= 2:
-            # If we have 2-3 employees, reserve the last two for autopsy
-            autopsy_employees = employees[-2:]
-            for emp in autopsy_employees:
-                emp['autopsy_reserved'] = True
-        else:
-            # If we have only 1 employee, reserve them for autopsy
-            autopsy_employees = [employees[-1]]
-            employees[-1]['autopsy_reserved'] = True
-    
+    # Reserve the last two PAs for autopsy (assign their entire shift to autopsy and exclude from other assignments)
+    autopsy_count = 2 if len(employees) >= 2 else len(employees)
+    autopsy_employees = employees[-autopsy_count:] if autopsy_count > 0 else []
+    assignment_employees = employees[:-autopsy_count] if autopsy_count > 0 else employees[:]
+    for emp in autopsy_employees:
+        emp['tasks'] = [{'name': 'Autopsy', 'hours': working_hours}]
+        emp['hours'] = working_hours
+        emp['case_counts'] = {'Autopsy': 1}
+
     # Step 1: Assign Priority Small to PA 1 for their full shift and fill remaining time
     priority_small_task = next((t for t in tasks if t['name'] == 'Priority Small'), None)
     if priority_small_task and priority_small_task['count'] > 0:
         rate_per_6_5h = TASK_RATES.get('Priority Small', 1)
         count = int(priority_small_task['count'])
         
-        # Find PA 1 specifically (first non-autopsy employee)
-        pa1 = None
-        for emp in employees:
-            if any(emp['id'] == autopsy_emp['id'] for autopsy_emp in autopsy_employees):
-                continue
-            pa1 = emp
-            break
+        # Find PA 1 specifically (first employee in assignment_employees)
+        pa1 = assignment_employees[0] if assignment_employees else None
         
         if pa1:
             # Calculate maximum tasks PA 1 can handle (should be 80 for 6.5 hour shift)
@@ -124,9 +110,9 @@ def distribute_tasks(tasks, available_people, working_hours):
                 remaining_time = working_hours - pa1['hours']
                 pa1['tasks'].append({'name': 'Available Time', 'hours': remaining_time})
                 pa1['hours'] = working_hours
-    
+
     # Step 2: Assign all Priority tasks (including remaining Priority Small)
-    # For Priority Small overflow: assign to next available PAs (excluding PA 1 and autopsy PAs)
+    # For Priority Small overflow: assign to next available PAs (excluding PA 1)
     for task_name in priority_order:
         task = next((t for t in tasks if t['name'] == task_name), None)
         if not task or task['count'] <= 0:
@@ -134,13 +120,10 @@ def distribute_tasks(tasks, available_people, working_hours):
 
         rate_per_6_5h = TASK_RATES.get(task_name, 1)
         count = int(task['count'])
-        for idx, emp in enumerate(employees):
-            if any(emp['id'] == autopsy_emp['id'] for autopsy_emp in autopsy_employees):
-                continue
-            
+        for idx, emp in enumerate(assignment_employees):
             # For Priority Small: skip PA 1 since they're already assigned their capacity
             # For other Priority tasks: skip PA 1 since they're completely reserved for Priority Small
-            if emp['id'] == 1:
+            if emp['id'] == assignment_employees[0]['id']:
                 continue
 
             max_assignable = working_hours
@@ -176,12 +159,9 @@ def distribute_tasks(tasks, available_people, working_hours):
 
         rate_per_6_5h = TASK_RATES.get(task_name, 1)
         count = int(task['count'])
-        for idx, emp in enumerate(employees):
-            if any(emp['id'] == autopsy_emp['id'] for autopsy_emp in autopsy_employees):
-                continue
-            
+        for idx, emp in enumerate(assignment_employees):
             # Skip PA 1 - they are completely reserved for Priority Small only
-            if emp['id'] == 1:
+            if emp['id'] == assignment_employees[0]['id']:
                 continue
 
             max_assignable = working_hours
@@ -205,19 +185,13 @@ def distribute_tasks(tasks, available_people, working_hours):
         if count > 0:
             outstanding[task_name] += count
     
-    # Remove all tasks from autopsy reserved employees and set their hours to working_hours
-    for autopsy_emp in autopsy_employees:
-        autopsy_emp['tasks'] = []
-        autopsy_emp['hours'] = working_hours
-        autopsy_emp['case_counts'] = {}
-    
     # Filter out any remaining placeholder tasks from all employees (but keep "Available Time")
     for emp in employees:
         emp['tasks'] = [task for task in emp['tasks'] if task['name'] != 'Other Work']
     
     # Return case_counts in the employee dicts
     return [
-        {k: v for k, v in emp.items() if k not in ('autopsy_reserved', 'priority_small_dedicated')}
+        {k: v for k, v in emp.items() if k not in ('priority_small_dedicated',)}
         for emp in employees
     ], outstanding
 
